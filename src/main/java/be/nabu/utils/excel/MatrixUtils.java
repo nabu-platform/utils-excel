@@ -36,7 +36,10 @@ public class MatrixUtils {
 	 * If timezones are in sync for parser & formatter, the time returned should be the same as can be seen in the excel.
 	 * 		-> note that excel does NOT use timezones!
 	 */
-	public static String[][] toString(Object [][] objects, String dateFormat, String timezone, Integer precision) {
+	public static String[][] toString(Object [][] objects, String dateFormat, TimeZone timezone, Integer precision) {
+		if (precision == null) {
+			precision = 2;
+		}
 		if (dateFormat == null)
 			dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS";
 		/**
@@ -57,7 +60,7 @@ public class MatrixUtils {
 		 */
 		SimpleDateFormat formatter = new SimpleDateFormat(dateFormat);
 		if (timezone != null)
-			formatter.setTimeZone(TimeZone.getTimeZone(timezone));
+			formatter.setTimeZone(timezone);
 		String[][] result = new String[objects.length][];
 		for (int i = 0; i < objects.length; i++) {
 			if (objects[i] != null) {
