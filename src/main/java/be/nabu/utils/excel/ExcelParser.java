@@ -36,12 +36,33 @@ public class ExcelParser implements Closeable {
 	 * @throws IOException
 	 */
 	public ExcelParser(InputStream input, FileType fileType, String password) throws IOException {
-		// set password
-		Biff8EncryptionKey.setCurrentUserPassword(password);
-		// initialize
-		workbook = fileType == FileType.XLSX ? new XSSFWorkbook(input) : new HSSFWorkbook(input);
-		// reset password
-		Biff8EncryptionKey.setCurrentUserPassword(null);
+		if (password != null) {
+			synchronized(Biff8EncryptionKey.class) {
+				// set password
+				Biff8EncryptionKey.setCurrentUserPassword(password);
+				// initialize
+				workbook = fileType == FileType.XLSX ? new XSSFWorkbook(input) : new HSSFWorkbook(input);
+				// reset password
+				Biff8EncryptionKey.setCurrentUserPassword(null);
+			}
+		}
+		else {
+			workbook = fileType == FileType.XLS ? new HSSFWorkbook(input) : new XSSFWorkbook(input);
+		}
+	}
+	
+	public ExcelParser(Workbook workbook) {
+		this.workbook = workbook;
+	}
+	
+	public List<String> getSheetNames(boolean includeHidden) {
+		List<String> names = new ArrayList<String>();
+		for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+			if (includeHidden || !workbook.isSheetHidden(i)) {
+				names.add(workbook.getSheetName(i));
+			}
+		}
+		return names;
 	}
 	
 	public Sheet getSheet(String sheetName, boolean useRegex) throws IOException {
