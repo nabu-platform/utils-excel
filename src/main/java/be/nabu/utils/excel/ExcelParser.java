@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -112,9 +113,9 @@ public class ExcelParser implements Closeable {
 		int sheetIndex = sheet.getWorkbook().getSheetIndex(sheet);
 		return sheet.getWorkbook().isSheetHidden(sheetIndex) || sheet.getWorkbook().isSheetVeryHidden(sheetIndex);
 	}
-
-	public Object[][] parse(Sheet sheet) throws IOException {
-		List<Object[]> matrix = new ArrayList<Object[]>();
+	
+	public List<List<?>> matrix(Sheet sheet) throws ParseException {
+		List<List<?>> matrix = new ArrayList<List<?>>();
 
 		// formula evaluator
 		FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
@@ -188,7 +189,7 @@ public class ExcelParser implements Closeable {
 								case Cell.CELL_TYPE_BOOLEAN: rowList.add((Boolean) cellValue.getBooleanValue()); break;
 								case Cell.CELL_TYPE_ERROR: 
 									if (!ignoreErrors)
-										throw new IOException("Exception detected at (" + row.getRowNum() + ", " + i + "): " + FormulaError.forInt(cellValue.getErrorValue()).getString());
+										throw new ParseException("Exception detected at (" + row.getRowNum() + ", " + i + "): " + FormulaError.forInt(cellValue.getErrorValue()).getString(), row.getRowNum());
 									rowList.add(FormulaError.forInt(cellValue.getErrorValue()).getString()); break;
 								case Cell.CELL_TYPE_FORMULA:
 									assert false : "According to the site (http://poi.apache.org/spreadsheet/eval.html) this shouldn't happen due to the evaluate";
@@ -230,9 +231,25 @@ public class ExcelParser implements Closeable {
 				}
 			}
 			// add the row
-			matrix.add((Object[]) rowList.toArray());
+			matrix.add(rowList);
 		}
-		return (Object[][]) matrix.toArray(new Object[matrix.size()][]);
+		return matrix;
+	}
+
+	@Deprecated
+	public Object[][] parse(Sheet sheet) throws IOException {
+		try {
+			List<List<?>> parseAsList = matrix(sheet);
+			List<Object[]> matrix = new ArrayList<Object[]>();
+			
+			for (List<?> parsed : parseAsList) {
+				matrix.add(parsed.toArray());
+			}
+			return (Object[][]) matrix.toArray(new Object[matrix.size()][]);
+		}
+		catch (ParseException e) {
+			throw new IOException(e);
+		}
 	}
 
 	public boolean isIgnoreErrors() {
