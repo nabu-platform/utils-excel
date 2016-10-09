@@ -2,8 +2,15 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>be.nabu.utils</groupId>
 	<artifactId>utils-excel</artifactId>
-	<version>1.0-SNAPSHOT</version>
+	<version>${be.nabu.utils-utils-excel-version}</version>
 	<name>utils-excel</name>
+	
+	<parent>
+		<groupId>be.nabu</groupId>
+		<artifactId>core</artifactId>
+		<version>1.0-SNAPSHOT</version>
+	</parent>
+
 	<build>
 		<plugins>
 			<plugin>
@@ -15,13 +22,8 @@
 			</plugin>
 		</plugins>
 	</build>
+	
 	<dependencies>
-		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<version>4.11</version>
-			<scope>test</scope>
-		</dependency>
 		<dependency>
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi-ooxml</artifactId>
@@ -30,7 +32,6 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
-			<version>1.7.12</version>
 		</dependency>
 	</dependencies>
 </project>
