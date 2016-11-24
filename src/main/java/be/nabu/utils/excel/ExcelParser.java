@@ -114,8 +114,8 @@ public class ExcelParser implements Closeable {
 		return sheet.getWorkbook().isSheetHidden(sheetIndex) || sheet.getWorkbook().isSheetVeryHidden(sheetIndex);
 	}
 	
-	public List<List<?>> matrix(Sheet sheet) throws ParseException {
-		List<List<?>> matrix = new ArrayList<List<?>>();
+	public List<List<Object>> matrix(Sheet sheet) throws ParseException {
+		List<List<Object>> matrix = new ArrayList<List<Object>>();
 
 		// formula evaluator
 		FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
@@ -239,7 +239,7 @@ public class ExcelParser implements Closeable {
 	@Deprecated
 	public Object[][] parse(Sheet sheet) throws IOException {
 		try {
-			List<List<?>> parseAsList = matrix(sheet);
+			List<List<Object>> parseAsList = matrix(sheet);
 			List<Object[]> matrix = new ArrayList<Object[]>();
 			
 			for (List<?> parsed : parseAsList) {

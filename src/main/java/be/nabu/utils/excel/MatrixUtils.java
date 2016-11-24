@@ -2,7 +2,10 @@ package be.nabu.utils.excel;
 
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 import java.util.TimeZone;
 
 public class MatrixUtils {
@@ -23,6 +26,29 @@ public class MatrixUtils {
 					int iReverse = matrix[i].length - (matrix[i].length - j);
 					int jReverse = matrix.length - (matrix.length - i);
 					rotated[iReverse][jReverse] = matrix[i][j];
+				}
+			}
+		}
+		return rotated;
+	}
+	
+	public static List<List<Object>> rotate(List<List<Object>> matrix) {
+		int max = 0;
+		for (int i = 0; i < matrix.size(); i++) {
+			if (matrix.get(i) != null && matrix.get(i).size() > max) {
+				max = matrix.get(i).size();
+			}
+		}
+		List<List<Object>> rotated = new ArrayList<List<Object>>();
+		for (int i = 0; i < max; i++) {
+			rotated.add(new ArrayList<Object>(Arrays.asList(new Object[matrix.size()])));
+		}
+		for (int i = 0; i < matrix.size(); i++) {
+			if (matrix.get(i) != null) {
+				for (int j = 0; j < matrix.get(i).size(); j++) {
+					int iReverse = matrix.get(i).size() - (matrix.get(i).size() - j);
+					int jReverse = matrix.size() - (matrix.size() - i);
+					rotated.get(iReverse).set(jReverse, matrix.get(i).get(j));
 				}
 			}
 		}
