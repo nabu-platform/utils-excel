@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
@@ -58,52 +59,56 @@ public class ExcelUtils {
 	/**
 	 * Writes a matrix to a sheet in an excel file
 	 */
-	public static void write(OutputStream output, Object[][] matrix, String sheetName, FileType fileType, String dateFormat) throws IOException {
+	@SuppressWarnings("unchecked")
+	public static void write(OutputStream output, Iterable<Object> matrix, String sheetName, FileType fileType, String dateFormat) throws IOException {
 		if (dateFormat == null)
 			dateFormat = "yyyy-MM-ddTHH:mm:ss";
 		Workbook workbook = fileType == FileType.XLS ? new HSSFWorkbook() : new XSSFWorkbook();
 		try {
 			Sheet sheet = workbook.createSheet(sheetName);
-			for (int i = 0; i < matrix.length; i++) {
-				Row row = sheet.createRow(i);
-				if (matrix[i] != null) {
-					for (int j = 0; j < matrix[i].length; j++) {
-						Cell cell = row.createCell(j);
-						if (matrix[i][j] == null)
+			int i = 0;
+			for (Object rowObject : matrix) {
+				Row row = sheet.createRow(i++);
+				if (rowObject != null) {
+					Iterable<Object> rowIterable = (Iterable<Object>) (rowObject instanceof Iterable ? rowObject : Arrays.asList(rowObject));
+					int j = 0;
+					for (Object cellValue : rowIterable) {
+						Cell cell = row.createCell(j++);
+						if (cellValue == null)
 							cell.setCellType(Cell.CELL_TYPE_BLANK);
-						else if (matrix[i][j] instanceof Number) {
+						else if (cellValue instanceof Number) {
 							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
-							cell.setCellValue(((Number) matrix[i][j]).doubleValue());
+							cell.setCellValue(((Number) cellValue).doubleValue());
 						}
-						else if (matrix[i][j] instanceof Boolean) {
+						else if (cellValue instanceof Boolean) {
 							cell.setCellType(Cell.CELL_TYPE_BOOLEAN);
-							cell.setCellValue(((Boolean) matrix[i][j]).booleanValue());
+							cell.setCellValue(((Boolean) cellValue).booleanValue());
 						}
-						else if (matrix[i][j] instanceof Date) {
+						else if (cellValue instanceof Date) {
 							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
-							cell.setCellValue((Date) matrix[i][j]);
+							cell.setCellValue((Date) cellValue);
 							CellStyle style = workbook.createCellStyle();
 							DataFormat formatter = workbook.createDataFormat();
 							style.setDataFormat(formatter.getFormat(dateFormat));
 							cell.setCellStyle(style);
 						}
-						else if (matrix[i][j] instanceof Calendar) {
+						else if (cellValue instanceof Calendar) {
 							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
-							cell.setCellValue((Calendar) matrix[i][j]);						
+							cell.setCellValue((Calendar) cellValue);						
 						}
-						else if (matrix[i][j] instanceof RichTextString) {
+						else if (cellValue instanceof RichTextString) {
 							cell.setCellType(Cell.CELL_TYPE_STRING);
-							cell.setCellValue((RichTextString) matrix[i][j]);						
+							cell.setCellValue((RichTextString) cellValue);						
 						}
 						// formula
-						else if (matrix[i][j] instanceof String && ((String) matrix[i][j]).startsWith("=")) {
+						else if (cellValue instanceof String && ((String) cellValue).startsWith("=")) {
 							cell.setCellType(Cell.CELL_TYPE_FORMULA);
 							// can not start with a "="
-							cell.setCellFormula(((String) matrix[i][j]).substring(1));
+							cell.setCellFormula(((String) cellValue).substring(1));
 						}
 						else {
 							cell.setCellType(Cell.CELL_TYPE_STRING);
-							cell.setCellValue(matrix[i][j].toString());
+							cell.setCellValue(cellValue.toString());
 						}
 					}
 				}
