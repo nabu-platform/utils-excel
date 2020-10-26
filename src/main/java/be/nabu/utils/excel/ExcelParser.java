@@ -23,6 +23,8 @@ import org.apache.poi.ss.usermodel.FormulaError;
 
 public class ExcelParser implements Closeable {
 	
+	// whether you want to use doubles or bigdecimals
+	private boolean useBigDecimals;
 	private boolean ignoreErrors = true, ignoreHiddenRows = false, ignoreHiddenSheets = false;
 	private Integer offsetX, offsetY, maxX, maxY;
 	
@@ -199,7 +201,7 @@ public class ExcelParser implements Closeable {
 										// TODO: cell.getDateCellValue() (if DateUtil is fixed) 
 										rowList.add(DateUtil.getJavaDate(cellValue.getNumberValue()));
 									else
-										rowList.add(new BigDecimal(cellValue.getNumberValue()));
+										rowList.add(useBigDecimals ? new BigDecimal(cellValue.getNumberValue()) : cellValue.getNumberValue());
 								break;
 								// add as string
 								default: rowList.add(cellValue.getStringValue());
@@ -312,4 +314,13 @@ public class ExcelParser implements Closeable {
 	public void close() throws IOException {
 		workbook.close();
 	}
+
+	public boolean isUseBigDecimals() {
+		return useBigDecimals;
+	}
+
+	public void setUseBigDecimals(boolean useBigDecimals) {
+		this.useBigDecimals = useBigDecimals;
+	}
+
 }
