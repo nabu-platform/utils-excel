@@ -91,10 +91,7 @@ public class Template {
 		substitute(target, variables, duplicateAll, direction, false);
 	}
 	
-	@SuppressWarnings("resource")
 	public void substitute(OutputStream target, Map<String, Object> variables, boolean duplicateAll, Direction direction, boolean removeNonExistent) throws IOException {
-		if (direction == null)
-			direction = Direction.VERTICAL;
 		logger.debug("Starting substitution in template '" + file + "'");
 		InputStream input = new BufferedInputStream(new FileInputStream(file));
 		try {
@@ -107,227 +104,257 @@ public class Template {
 				wb = new HSSFWorkbook(input);
 			else
 				throw new IOException("Unknown file type, expecting xls or xlsx");
-			
-			// the pattern to detect variable names
-			Pattern pattern = Pattern.compile("%[^%]+%");
-			// loop over the sheets
-			for (int i = 0; i < wb.getNumberOfSheets(); i++) {
-				String sheetName = wb.getSheetName(i);
-				logger.debug("Checking sheet '" + sheetName + "'");
-				// check name of sheet for variables
-				Matcher sheetMatcher = pattern.matcher(sheetName);
-				while (sheetMatcher.find()) {
-					String variable = sheetMatcher.group().replaceAll("%", "");
-					logger.debug("Found variable '" + variable + "' = '{}' in sheetname", variables.get(variable));
-					if (variables.containsKey(variable))
-						sheetName = sheetName.replaceAll(sheetMatcher.group(), variables.get(variable).toString());
-				}
-				wb.setSheetName(i, sheetName);
-				
-				// the "shifts" are a runtime count of which rows have been shifted by how much
-				// for example suppose you have two lists next to one another, the first list has 3 elements, so i add 2 rows
-				// the second list has 4 elements, i don't want to add 3 new rows, but actually reuse the ones added before, in this case i want to add 1 additional row
-				// to be able to do this, i need to keep track of the shifts that have already occurred in this sheet
-				Map<Integer, Integer> shifts = new HashMap<Integer, Integer>();
-
-				// get the sheet
-				Sheet sheet = wb.getSheetAt(i);
-				
-				// indicates that processing is still going on. Due to creation of new rows and columns, the counters may get confused, so i basically start over again
-				boolean processing = true;
-			
-				// the actual processing loop, this is jumped back on whenever new rows/columns are created on the fly
-				loop: while(processing) {
-					logger.trace("Processing loop started");
-					// loop over the rows
-					for (Row row : sheet) {
-						// loop over the cells
-						for (Cell cell : row) {
-							Matcher matcher = pattern.matcher(cell.toString());
-							// loop over any variable names that are present
-							while(matcher.find()) {
-								// the full variable
-								String variable = matcher.group().replaceAll("%", "");
-								logger.debug("Found variable reference in excel: " + variable);
-								// you can add additional information after a "/"
-								String [] parts = variable.split("/");
-								// a name can consist of multiple parts
-								String [] variableParts = getMappedVariable(parts[0], variables);
-								// check if the variable is currently in the variables store as a whole
-								if (variables.containsKey(parts[0])) {
-									// check the type of the variable
-									// a list means i need to possibly add some rows/columns
-									if (variables.get(parts[0]) instanceof List) {
-										logger.debug("Variable '" + parts[0] + "' is a list");
-										List<?> list = (List<?>) variables.get(parts[0]);
-										switch(direction) {
-											case VERTICAL:
-												// the row where the variable is at, is already one row, hence the "-1"
-												insertRows(sheet, shifts, row.getRowNum(), list.size() - 1);
-												// loop over the values
-												for (int j = 0; j < list.size(); j++) {
-													// get the row we are filling up
-													Row currentRow = sheet.getRow(row.getRowNum() + j);
-													// get the cell
-													Cell currentCell = currentRow.getCell(cell.getColumnIndex());
-													writeValue(currentCell, list.get(j), parts.length > 1 ? parts[1] : null);
-												}
-												// replace constants in the main row
-												if (cell.toString().matches(".*%\"[^\"]+\"%.*"))
-													cell.setCellValue(cell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
-											break;
-											case HORIZONTAL:
-												// write [0] to the current cell
-												writeValue(cell, list.get(0), parts.length > 1 ? parts[1] : null);
-												// move the cells that are beyond this column
-												for (int j = row.getLastCellNum() - 1; j > cell.getColumnIndex(); j--) {
-													Cell tmp = row.getCell(j);
-													if (tmp != null) {
-														Cell newCell = row.createCell(j + list.size() - 1);
-														switch (tmp.getCellType()) {
-															case Cell.CELL_TYPE_BOOLEAN:
-																newCell.setCellValue(tmp.getBooleanCellValue());
-															break;
-															case Cell.CELL_TYPE_NUMERIC:
-																newCell.setCellValue(tmp.getNumericCellValue());
-															break;
-															case Cell.CELL_TYPE_FORMULA:
-																newCell.setCellFormula(tmp.getCellFormula());
-															break;
-															default:
-																newCell.setCellValue(tmp.toString());
-														}
-														newCell.setCellStyle(tmp.getCellStyle());
-														newCell.setCellType(tmp.getCellType());
-													}
-												}
-												// create new cells for the other values
-												for (int j = list.size() - 1; j >= 1; j--) {
-													Cell newCell = row.createCell(cell.getColumnIndex() + j, cell.getCellType());
-													newCell.setCellStyle(cell.getCellStyle());
-													writeValue(newCell, list.get(j), parts.length > 1 ? parts[1] : null);
-												}
-											break;
-										}
-										// need to start again cause rows may have changed
-										// since the variables up till now have been resolved, this should not lead to an infinite loop
-										continue loop;
-									}
-									// if it's a string, it can be a partial match
-									else if (variables.get(parts[0]) instanceof String) {
-										logger.debug("Variable '" + parts[0] + "' is a string");
-										writeValue(cell, cell.toString().replaceAll(matcher.group(), variables.get(parts[0]).toString()), parts.length > 1 ? parts[1] : null);
-									}
-									// otherwise, just write it as is
-									else {
-										logger.debug("Variable '" + parts[0] + "' is written as is (" + variables.get(parts[0]) + ")");
-										writeValue(cell, variables.get(parts[0]), parts.length > 1 ? parts[1] : null);
-									}
-								}
-								// if the variable itself is not in the store, it may be a "." separated name, in which case i may need to explode an array of maps
-								// e.g. "records.name" could indicate multiple records
-								else if (variableParts != null && variableParts.length > 1 && variables.containsKey(variableParts[0])) {
-									// an array of maps can be exploded onto the variable space
-									if (variables.get(variableParts[0]) instanceof Map[]) {
-										logger.debug("Variable '" + variableParts[0] + "' is a map array");
-										Map<?,?>[] maps = (Map[]) variables.get(variableParts[0]);
-										switch (direction) {
-											case VERTICAL:
-												// duplicate the last column a number of times
-												if (maps.length > 1)
-													duplicateColumn(sheet, maps.length, parts.length > 1 ? parts[1] : null, cell.getColumnIndex(), variableParts[0], duplicateAll);
-												for (int j = 0; j < maps.length; j++) {
-													// we need to create a new column for each record (except of course the first column, which is the template)
-//													if (j > 0) {
-//														duplicateColumn(sheet, j, parts.length > 1 ? parts[1] : null, cell.getColumnIndex());
-//														out.println("Duplicated column: " + j + "." + parts[0]);
-//													}
-													logger.debug("Exploding map " + j + " for " + variableParts[0]);
-													// explode all the variables in the map in a way: "<counter>.<name>"
-													for (Object key : maps[j].keySet()) {
-														String name = j + "." + variableParts[0] + "." + key.toString();
-														logger.debug("\t" + name + ": " + maps[j].get(key));
-														variables.put(name, maps[j].get(key));
-													}
-												}
-												// all the newly duplicated columns will have automatically updated the names of the variables to incorporate the exploded name
-												// however the original column is not yet updated, do that now
-												// update the original column to use prefixes (now that all the copies have been made)
-												for (Row tmp : sheet) {
-													if (tmp.getCell(cell.getColumnIndex()) != null) {
-														Cell tmpCell = tmp.getCell(cell.getColumnIndex());
-														// check if it contains a variable
-//														if (tmpCell.toString().matches(".*%[^%]+%.*"))
-//															tmpCell.setCellValue(tmpCell.toString().replaceAll("%([^%]+%)", "%0.$1"));
-														// check if it contains a complex variable of the same type as the map
-														// constants
-														if (tmpCell.toString().matches(".*%\"[^\"]+\"%.*"))
-															tmpCell.setCellValue(tmpCell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
-														else if (tmpCell.toString().matches(".*%" + variableParts[0] + "\\.[^%]+%.*"))
-															tmpCell.setCellValue(tmpCell.toString().replaceAll("%([^%]+%)", "%0.$1"));
-													}
-												}
-											break;
-											case HORIZONTAL:
-												int blocksize = getBlocksize(sheet, row.getRowNum(), variableParts[0]);
-												// duplicate the row a few times
-												if (maps.length > 1)
-													duplicateRowBlock(sheet, maps.length, parts.length > 1 ? parts[1] : null, row.getRowNum(), blocksize, variableParts[0], duplicateAll);
-												// the "first" row block, so the original, is not yet updated, update it
-												for (int j = 0; j < blocksize; j++) {
-													Row blockRow = sheet.getRow(row.getRowNum() + j);
-													for (Cell tmp : blockRow) {
-														// constants
-														if (tmp.toString().matches(".*%\"[^\"]+\"%.*"))
-															tmp.setCellValue(tmp.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
-														else if (tmp.toString().matches("^.*%" + variableParts[0] + "\\.[^%]+%.*$"))
-															tmp.setCellValue(tmp.toString().replaceAll("^(.*%)(" + variableParts[0] + "\\.[^%]+%.*)$", "$1" + "0" + ".$2"));
-													}
-												}
-												// explode the maps
-												for (int j = 0; j < maps.length; j++)
-													explode(variables, maps[j], j + "." + variableParts[0]);
-											break;
-										}
-										// remove the map
-										// 2013-12-19: don't remove the variable, this way it can be used multiple times
-										// this could be optimized so we don't explode it every time.
-//										variables.remove(variableParts[0]);
-										// the sheet has changed, restart processing
-										continue loop;
-									}
-									else
-										logger.warn("The complex variable '" + variableParts[0] + "' is not a map");
-								}
-								else if (removeNonExistent) {
-									if (cell.toString().equals(matcher.group())) {
-										logger.debug("The non-existent variable is replaced with a blank cell");
-										cell.setCellType(Cell.CELL_TYPE_BLANK);
-									}
-									else {
-										logger.debug("The non-existent variable is a partial string, replace with an empty string");
-										writeValue(cell, cell.toString().replaceAll(matcher.group(), ""), null);
-									}
-								}
-								else
-									logger.warn("Could not find variable '" + parts[0] + "'");
-							}
-						}
-					}
-					// stop processing
-					break loop;
-				}
-			}
-			wb.write(target);
 		}
 		finally {
 			input.close();
 		}
 	}
 	
-	private void explode(Map<String, Object> variables, Map<?, ?> source, String name) {
+	private static String getVariableNameFromMatch(String match) {
+//		return match.replaceAll("%", "");
+		// skip ${  and }
+		return match.substring(2, match.length() - 1);
+	}
+	
+	public static void substitute(Workbook wb, OutputStream target, Map<String, Object> variables, boolean duplicateAll, Direction direction, boolean removeNonExistent) throws IOException {
+		if (direction == null)
+			direction = Direction.VERTICAL;
+		// the pattern to detect variable names
+//		Pattern pattern = Pattern.compile("%[^%]+%");
+		Pattern pattern = Pattern.compile("\\$\\{[^}]+\\}");
+		// loop over the sheets
+		for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+			String sheetName = wb.getSheetName(i);
+			logger.debug("Checking sheet '" + sheetName + "'");
+			// check name of sheet for variables
+			Matcher sheetMatcher = pattern.matcher(sheetName);
+			while (sheetMatcher.find()) {
+				String variable = getVariableNameFromMatch(sheetMatcher.group());
+				logger.debug("Found variable '" + variable + "' = '{}' in sheetname", variables.get(variable));
+				if (variables.containsKey(variable))
+					sheetName = sheetName.replaceAll(Pattern.quote(sheetMatcher.group()), Matcher.quoteReplacement(variables.get(variable).toString()));
+			}
+			wb.setSheetName(i, sheetName);
+			
+			// the "shifts" are a runtime count of which rows have been shifted by how much
+			// for example suppose you have two lists next to one another, the first list has 3 elements, so i add 2 rows
+			// the second list has 4 elements, i don't want to add 3 new rows, but actually reuse the ones added before, in this case i want to add 1 additional row
+			// to be able to do this, i need to keep track of the shifts that have already occurred in this sheet
+			Map<Integer, Integer> shifts = new HashMap<Integer, Integer>();
+
+			// get the sheet
+			Sheet sheet = wb.getSheetAt(i);
+			
+			// indicates that processing is still going on. Due to creation of new rows and columns, the counters may get confused, so i basically start over again
+			boolean processing = true;
+		
+			// the actual processing loop, this is jumped back on whenever new rows/columns are created on the fly
+			loop: while(processing) {
+				logger.trace("Processing loop started");
+				// loop over the rows
+				for (Row row : sheet) {
+					// loop over the cells
+					for (Cell cell : row) {
+						Matcher matcher = pattern.matcher(cell.toString());
+						// loop over any variable names that are present
+						while(matcher.find()) {
+							// the full variable
+							String variable = getVariableNameFromMatch(matcher.group());
+							logger.debug("Found variable reference in excel: " + variable);
+							// you can add additional information after a "?"
+							String [] parts = variable.split("\\?");
+							// a name can consist of multiple parts
+							String [] variableParts = getMappedVariable(parts[0], variables);
+							// check if the variable is currently in the variables store as a whole
+							if (variables.containsKey(parts[0])) {
+								// check the type of the variable
+								// a list means i need to possibly add some rows/columns
+								if (variables.get(parts[0]) instanceof List) {
+									logger.debug("Variable '" + parts[0] + "' is a list");
+									List<?> list = (List<?>) variables.get(parts[0]);
+									switch(direction) {
+										case VERTICAL:
+											// the row where the variable is at, is already one row, hence the "-1"
+											insertRows(sheet, shifts, row.getRowNum(), list.size() - 1);
+											// loop over the values
+											for (int j = 0; j < list.size(); j++) {
+												// get the row we are filling up
+												Row currentRow = sheet.getRow(row.getRowNum() + j);
+												// get the cell
+												Cell currentCell = currentRow.getCell(cell.getColumnIndex());
+												writeValue(currentCell, list.get(j), parts.length > 1 ? parts[1] : null);
+											}
+											// replace constants in the main row
+											if (cell.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+												cell.setCellValue(cell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
+										break;
+										case HORIZONTAL:
+											// write [0] to the current cell
+											writeValue(cell, list.get(0), parts.length > 1 ? parts[1] : null);
+											// move the cells that are beyond this column
+											for (int j = row.getLastCellNum() - 1; j > cell.getColumnIndex(); j--) {
+												Cell tmp = row.getCell(j);
+												if (tmp != null) {
+													Cell newCell = row.createCell(j + list.size() - 1);
+													switch (tmp.getCellType()) {
+														case Cell.CELL_TYPE_BOOLEAN:
+															newCell.setCellValue(tmp.getBooleanCellValue());
+														break;
+														case Cell.CELL_TYPE_NUMERIC:
+															newCell.setCellValue(tmp.getNumericCellValue());
+														break;
+														case Cell.CELL_TYPE_FORMULA:
+															newCell.setCellFormula(tmp.getCellFormula());
+														break;
+														default:
+															newCell.setCellValue(tmp.toString());
+													}
+													newCell.setCellStyle(tmp.getCellStyle());
+													newCell.setCellType(tmp.getCellType());
+												}
+											}
+											// create new cells for the other values
+											for (int j = list.size() - 1; j >= 1; j--) {
+												Cell newCell = row.createCell(cell.getColumnIndex() + j, cell.getCellType());
+												newCell.setCellStyle(cell.getCellStyle());
+												writeValue(newCell, list.get(j), parts.length > 1 ? parts[1] : null);
+											}
+										break;
+									}
+									// need to start again cause rows may have changed
+									// since the variables up till now have been resolved, this should not lead to an infinite loop
+									continue loop;
+								}
+								// if it's a string, it can be a partial match
+								else if (variables.get(parts[0]) instanceof String) {
+									logger.debug("Variable '" + parts[0] + "' is a string");
+									writeValue(cell, cell.toString().replaceAll(Pattern.quote(matcher.group()), Matcher.quoteReplacement(variables.get(parts[0]).toString())), parts.length > 1 ? parts[1] : null);
+								}
+								// otherwise, just write it as is
+								else {
+									logger.debug("Variable '" + parts[0] + "' is written as is (" + variables.get(parts[0]) + ")");
+									writeValue(cell, variables.get(parts[0]), parts.length > 1 ? parts[1] : null);
+								}
+							}
+							// if the variable itself is not in the store, it may be a "/" separated name, in which case i may need to explode an array of maps
+							// e.g. "records.name" could indicate multiple records
+							else if (variableParts != null && variableParts.length > 1 && variables.containsKey(variableParts[0])) {
+								Object targetVariable = variables.get(variableParts[0]);
+								// if it's an iterable, it might be an iterable of...maps?
+								// seriously nasty workaround for code that is almost 10 years old...
+								if (targetVariable instanceof Iterable) {
+									boolean allMaps = true;
+									List<Map> maps = new ArrayList<Map>();
+									for (Object single : (Iterable) variables.get(variableParts[0])) {
+										if (single instanceof Map) {
+											maps.add((Map) single);
+										}
+										else {
+											allMaps = false;
+										}
+									}
+									if (allMaps) {
+										targetVariable = maps.toArray(new Map[0]);
+									}
+								}
+								// an array of maps can be exploded onto the variable space
+								if (targetVariable instanceof Map[]) {
+									logger.debug("Variable '" + variableParts[0] + "' is a map array");
+									Map<?,?>[] maps = (Map[]) targetVariable;
+									switch (direction) {
+										case VERTICAL:
+											// duplicate the last column a number of times
+											if (maps.length > 1)
+												duplicateColumn(sheet, maps.length, parts.length > 1 ? parts[1] : null, cell.getColumnIndex(), variableParts[0], duplicateAll);
+											for (int j = 0; j < maps.length; j++) {
+												// we need to create a new column for each record (except of course the first column, which is the template)
+//													if (j > 0) {
+//														duplicateColumn(sheet, j, parts.length > 1 ? parts[1] : null, cell.getColumnIndex());
+//														out.println("Duplicated column: " + j + "." + parts[0]);
+//													}
+												logger.debug("Exploding map " + j + " for " + variableParts[0]);
+												// explode all the variables in the map in a way: "<counter>.<name>"
+												for (Object key : maps[j].keySet()) {
+													System.out.println("que " + j + " and " + key);
+													String name = j + "/" + variableParts[0] + "/" + key.toString();
+													logger.debug("\t" + name + ": " + maps[j].get(key));
+													variables.put(name, maps[j].get(key));
+												}
+											}
+											// all the newly duplicated columns will have automatically updated the names of the variables to incorporate the exploded name
+											// however the original column is not yet updated, do that now
+											// update the original column to use prefixes (now that all the copies have been made)
+											for (Row tmp : sheet) {
+												if (tmp.getCell(cell.getColumnIndex()) != null) {
+													Cell tmpCell = tmp.getCell(cell.getColumnIndex());
+													// check if it contains a variable
+//														if (tmpCell.toString().matches(".*%[^%]+%.*"))
+//															tmpCell.setCellValue(tmpCell.toString().replaceAll("%([^%]+%)", "%0.$1"));
+													// check if it contains a complex variable of the same type as the map
+													// constants
+													if (tmpCell.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+														tmpCell.setCellValue(tmpCell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
+													else if (tmpCell.toString().matches(".*\\$\\{" + variableParts[0] + "/[^}]+\\}.*"))
+														tmpCell.setCellValue(tmpCell.toString().replaceAll("\\$\\{([^}]+\\})", "\\${0/$1"));
+												}
+											}
+										break;
+										case HORIZONTAL:
+											int blocksize = getBlocksize(sheet, row.getRowNum(), variableParts[0]);
+											// duplicate the row a few times
+											if (maps.length > 1)
+												duplicateRowBlock(sheet, maps.length, parts.length > 1 ? parts[1] : null, row.getRowNum(), blocksize, variableParts[0], duplicateAll);
+											// the "first" row block, so the original, is not yet updated, update it
+											for (int j = 0; j < blocksize; j++) {
+												Row blockRow = sheet.getRow(row.getRowNum() + j);
+												for (Cell tmp : blockRow) {
+													// constants
+													if (tmp.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+														tmp.setCellValue(tmp.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
+													else if (tmp.toString().matches("^.*\\$\\{" + variableParts[0] + "/[^}]+\\}.*$"))
+														tmp.setCellValue(tmp.toString().replaceAll("^(.*\\$\\{)(" + variableParts[0] + "/[^}]+\\}.*)$", "$1" + "0" + ".$2"));
+												}
+											}
+											// explode the maps
+											for (int j = 0; j < maps.length; j++)
+												explode(variables, maps[j], j + "/" + variableParts[0]);
+										break;
+									}
+									// remove the map
+									// 2013-12-19: don't remove the variable, this way it can be used multiple times
+									// this could be optimized so we don't explode it every time.
+//										variables.remove(variableParts[0]);
+									// the sheet has changed, restart processing
+									continue loop;
+								}
+								else
+									logger.warn("The complex variable '" + variableParts[0] + "' is not a map");
+							}
+							else if (removeNonExistent) {
+								if (cell.toString().equals(matcher.group())) {
+									logger.debug("The non-existent variable is replaced with a blank cell");
+									cell.setCellType(Cell.CELL_TYPE_BLANK);
+								}
+								else {
+									logger.debug("The non-existent variable is a partial string, replace with an empty string");
+									writeValue(cell, cell.toString().replaceAll(matcher.group(), ""), null);
+								}
+							}
+							else
+								logger.warn("Could not find variable '" + parts[0] + "'");
+						}
+					}
+				}
+				// stop processing
+				break loop;
+			}
+		}
+		wb.write(target);
+	}
+	
+	private static void explode(Map<String, Object> variables, Map<?, ?> source, String name) {
 		for (Object key : source.keySet()) {
-			String childName = name + "." + key.toString();
+			String childName = name + "/" + key.toString();
 			if (source.get(key) instanceof Map)
 				explode(variables, (Map<?, ?>) source.get(key), childName);
 			else {
@@ -380,20 +407,22 @@ public class Template {
 	 * This service returns an array of size 2: [name_of_map_variable, name_of_variable_in_map]
 	 * @return
 	 */
-	private String [] getMappedVariable(String name, Map<String, Object> variables) {
-		String [] parts = name.split("\\.");
+	private static String [] getMappedVariable(String name, Map<String, Object> variables) {
+		String [] parts = name.split("/");
 		int i = 0;
 		String key = "";
 		do {
-			key += (key.equals("") ? "" : ".") + parts[i];
-			if (variables.containsKey(key))
-				return new String[] { key, name.replaceFirst(Pattern.quote(key), "") };
+			key += (key.equals("") ? "" : "/") + parts[i];
+			if (variables.containsKey(key)) {
+				// also strip the "/"
+				return new String[] { key, key.equals(name) ? "" : name.substring(key.length() + 1) };
+			}
 			i++;
 		} while(i < parts.length - 1);
 		return null;
 	}
 	
-	private void writeValue(Cell cell, Object value, String style) {
+	private static void writeValue(Cell cell, Object value, String style) {
 		// the type of the value determines how to write the value
 		if (value instanceof Integer)
 			cell.setCellValue((Integer) value);
@@ -446,7 +475,7 @@ public class Template {
 //		}
 	}
 	
-	private void insertRows(Sheet sheet, Map<Integer, Integer> shifts, int row, int amount) {
+	private static void insertRows(Sheet sheet, Map<Integer, Integer> shifts, int row, int amount) {
 		// the offset of already shifted rows, if we shift at the beginning, earlier data may shift downwards
 		int offset = 0;
 
@@ -472,8 +501,8 @@ public class Template {
 					Cell newCell = newRow.createCell(cell.getColumnIndex());
 					newCell.setCellStyle(cell.getCellStyle());
 					// duplicate constants
-					if (cell.toString().matches(".*%\"[^\"]+\"%.*"))
-						newCell.setCellValue(cell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
+					if (cell.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+						newCell.setCellValue(cell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
 					// otherwise leave empty
 					else
 						newCell.setCellType(Cell.CELL_TYPE_BLANK);
@@ -511,7 +540,7 @@ public class Template {
 		}
 	}
 	
-	private Map<String, String> parseStyle(String style) {
+	private static Map<String, String> parseStyle(String style) {
 		Map<String, String> map = new HashMap<String, String>();
 		String [] parts = style.split(";");
 		for (String part : parts) {
@@ -531,14 +560,14 @@ public class Template {
 	 * @param columnIndex The index of the column that was requested for duplication (each row will only be copied if the columnIndex matches the last one
 	 * @param complexName If this is set to "null", all the columns in the row will be moved. If it is set to a value, only the rows who's columns (@ columIndex) have the complex name will be moved.
 	 */
-	private void duplicateColumn(Sheet sheet, int recordCount, String style, int columnIndex, String complexName, boolean duplicateAll) {
+	private static void duplicateColumn(Sheet sheet, int recordCount, String style, int columnIndex, String complexName, boolean duplicateAll) {
 		logger.debug("Moving columns after '" + columnIndex + "' " + recordCount + " to the right" + (complexName != null ? " (where complex variable is '" + complexName + "')" : " (all)"));
 		// for the count of the records to be inserted
 		// for each row, copy the cell
 		for (Row row : sheet) {
 			// if you give a complex name, only cells that contain a variable with such a complex name are copied
 			// otherwise if you have two complex variables in the same column, they will both get copied
-			if (!duplicateAll && complexName != null && (row.getCell(columnIndex) != null && !row.getCell(columnIndex).toString().matches("^.*%" + complexName + "\\.[^%]+%.*$") && !row.getCell(columnIndex).toString().matches("^.*%\"[^\"]+\"%.*$")))
+			if (!duplicateAll && complexName != null && (row.getCell(columnIndex) != null && !row.getCell(columnIndex).toString().matches("^.*\\$\\{" + complexName + "/[^}]+\\}.*$") && !row.getCell(columnIndex).toString().matches("^.*\\$\\{\"[^\"]+\"\\}.*$")))
 				continue;
 			// move the cells that are beyond this column
 			for (int i = row.getPhysicalNumberOfCells() - 1; i > columnIndex; i--) {
@@ -591,15 +620,15 @@ public class Template {
 							newCell.setCellValue(cell.toString());
 					}
 					// replace constants
-					if (newCell.toString().matches(".*%\"[^\"]+\"%.*"))
-						newCell.setCellValue(newCell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
+					if (newCell.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+						newCell.setCellValue(newCell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
 					// replace variables (named or if no name is given all)
-					else if ((complexName == null && newCell.toString().matches(".*%[^%]+%.*")) || (newCell.toString().matches(".*%" + complexName + "\\.[^%]+%.*"))) {
+					else if ((complexName == null && newCell.toString().matches(".*\\$\\{[^}]+\\}.*")) || (newCell.toString().matches(".*\\$\\{" + complexName + "/[^}]+\\}.*"))) {
 						// this quick fix does not apply to columns because each column must be auto-sized
 //						if (i < recordCount - 1)
 //							newCell.setCellValue(newCell.toString().replaceAll("%([^%]+%)", "%" + i + ".$1").replaceAll("(/|;)fit:auto", ""));
 //						else
-							newCell.setCellValue(newCell.toString().replaceAll("%([^%]+%)", "%" + i + ".$1"));
+							newCell.setCellValue(newCell.toString().replaceAll("\\$\\{([^}]+\\})", "\\${" + i + "/$1"));
 					}
 				}
 			}
@@ -622,7 +651,7 @@ public class Template {
 				for (Cell cell : sheet.getRow(rowIndex)) {
 					if (cell == null)
 						continue;
-					if (!duplicateAll && complexName != null && !(cell.toString().matches("^.*%" + complexName + "\\.[^%]+%.*$")) && !cell.toString().matches("^.*%\"[^\"]+\"%.*$"))
+					if (!duplicateAll && complexName != null && !(cell.toString().matches("^.*%" + complexName + "/[^%]+%.*$")) && !cell.toString().matches("^.*%\"[^\"]+\"%.*$"))
 						continue;
 					Cell newCell = row.createCell(cell.getColumnIndex());
 					newCell.setCellStyle(cell.getCellStyle());
@@ -630,7 +659,7 @@ public class Template {
 					if (cell.toString().matches(".*%\"[^\"]+\"%.*"))
 						newCell.setCellValue(cell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
 					// if there is a variable in the cell, prefix it with the index
-					else if ((complexName == null && cell.toString().matches(".*%[^%]+%.*")) || cell.toString().matches(".*%" + complexName + "\\.[^%]+%.*")) {
+					else if ((complexName == null && cell.toString().matches(".*%[^%]+%.*")) || cell.toString().matches(".*%" + complexName + "/[^%]+%.*")) {
 						// quick fix for a problem we encountered: we had like 4 sheets with 15 columns each and hundreds of rows. The "fit:auto" property was copied into every cell which was slow as hell
 						// removing the fix auto reduced the convert time from 8 minutes to 5 seconds.
 						// this bit of code will check that unless you are doing the last row, the fit:auto should NOT be copied
@@ -655,7 +684,7 @@ public class Template {
 		}
 	}
 	
-	private void duplicateRowBlock(Sheet sheet, int recordCount, String style, int rowIndex, int blocksize, String complexName, boolean duplicateAll) {
+	private static void duplicateRowBlock(Sheet sheet, int recordCount, String style, int rowIndex, int blocksize, String complexName, boolean duplicateAll) {
 		System.out.println("Duplicating row block: " + rowIndex + " > " + blocksize);
 		// only duplicate if there is more than 1 record
 		if (recordCount > 1) {
@@ -669,23 +698,23 @@ public class Template {
 					for (Cell cell : sheet.getRow(rowIndex + j)) {
 						if (cell == null)
 							continue;
-						if (!duplicateAll && complexName != null && !(cell.toString().matches("^.*%" + complexName + "\\.[^%]+%.*$")) && !cell.toString().matches("^.*%\"[^\"]+\"%.*$"))
+						if (!duplicateAll && complexName != null && !(cell.toString().matches("^.*\\$\\{" + complexName + "/[^}]+\\}.*$")) && !cell.toString().matches("^.*\\$\\{\"[^\"]+\"\\}.*$"))
 							continue;
 						Cell newCell = row.createCell(cell.getColumnIndex());
 						newCell.setCellStyle(cell.getCellStyle());
 						// replace constants
-						if (cell.toString().matches(".*%\"[^\"]+\"%.*"))
-							newCell.setCellValue(cell.toString().replaceAll("%\"([^\"]+)\"%", "$1"));
+						if (cell.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
+							newCell.setCellValue(cell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
 						// if there is a variable in the cell, prefix it with the index
-						else if ((complexName == null && cell.toString().matches(".*%[^%]+%.*")) || cell.toString().matches(".*%" + complexName + "\\.[^%]+%.*")) {
+						else if ((complexName == null && cell.toString().matches(".*\\$\\{[^}]+\\}.*")) || cell.toString().matches(".*\\$\\{" + complexName + "/[^}]+\\}.*")) {
 							// quick fix for a problem we encountered: we had like 4 sheets with 15 columns each and hundreds of rows. The "fit:auto" property was copied into every cell which was slow as hell
 							// removing the fix auto reduced the convert time from 8 minutes to 5 seconds.
 							// this bit of code will check that unless you are doing the last row, the fit:auto should NOT be copied
 							// doing a fit does the entire column anyway
 							if (i < recordCount - 1)
-								newCell.setCellValue(cell.toString().replaceAll("%([^%]+%)", "%" + i + ".$1").replaceAll("(/|;)fit:auto", ""));
+								newCell.setCellValue(cell.toString().replaceAll("\\$\\{([^}]+\\})", "\\${" + i + "/$1").replaceAll("(/|;)fit:auto", ""));
 							else
-								newCell.setCellValue(cell.toString().replaceAll("%([^%]+%)", "%" + i + ".$1"));
+								newCell.setCellValue(cell.toString().replaceAll("\\$\\{([^}]+\\})", "\\${" + i + "/$1"));
 						}
 						else {
 							switch (cell.getCellType()) {
@@ -703,7 +732,7 @@ public class Template {
 		}
 	}
 	
-	private int getBlocksize(Sheet sheet, int rowIndex, String complexName) {
+	private static int getBlocksize(Sheet sheet, int rowIndex, String complexName) {
 		int blocksize = 0;
 		// any lines that are empty at the end are counted with the block size but should only really count if followed by a variable line
 		int trailingEmptyLines = 0;
@@ -711,11 +740,11 @@ public class Template {
 			boolean hasComplex = false;
 			boolean hasOtherVariables = false;
 			for (Cell cell : sheet.getRow(i)) {
-				if (cell.toString().matches("%" + complexName + "\\.[^%]+%")) {
+				if (cell.toString().matches("\\$\\{" + complexName + "/[^}]+\\}")) {
 					hasComplex = true;
 					break;
 				}
-				else if (cell.toString().matches("%[^%]+%"))
+				else if (cell.toString().matches("\\$\\{[^}]+\\}"))
 					hasOtherVariables = true;
 			}
 			if (hasComplex) {
@@ -732,7 +761,7 @@ public class Template {
 		return blocksize - trailingEmptyLines;
 	}
 	
-	private void applyStyle(Cell cell, String style) {
+	private static void applyStyle(Cell cell, String style) {
 		if (style != null) {
 			logger.debug("Applying style '" + style + "' on " + cell.getRowIndex() + ", " + cell.getColumnIndex());
 			Map<String, String> map = parseStyle(style);
