@@ -275,7 +275,6 @@ public class Template {
 												logger.debug("Exploding map " + j + " for " + variableParts[0]);
 												// explode all the variables in the map in a way: "<counter>.<name>"
 												for (Object key : maps[j].keySet()) {
-													System.out.println("que " + j + " and " + key);
 													String name = j + "/" + variableParts[0] + "/" + key.toString();
 													logger.debug("\t" + name + ": " + maps[j].get(key));
 													variables.put(name, maps[j].get(key));
