@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -26,6 +27,11 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import be.nabu.libs.types.TypeUtils;
+import be.nabu.libs.types.api.ComplexContent;
+import be.nabu.libs.types.api.ComplexType;
+import be.nabu.libs.types.api.Element;
 
 /**
  * This class allows you to build excel files starting from a template.
@@ -53,6 +59,9 @@ import org.slf4j.LoggerFactory;
  * Note: this does not work well with formula's (for example with added rows/columns, the formula's are not "updated" to reflect their new position).
  */
 public class Template {
+	
+	// how many trailing empty lines are checked before concluding that the block is finished
+	private static int maxTrailingEmptyLines = 100;
 	
 	public enum Direction {
 		VERTICAL, HORIZONTAL
@@ -249,7 +258,15 @@ public class Template {
 										if (single instanceof Map) {
 											maps.add((Map) single);
 										}
+										else if (single instanceof ComplexContent) {
+											Map map = new HashMap();
+											for (Element<?> child : TypeUtils.getAllChildren(((ComplexContent) single).getType())) {
+												map.put(child.getName(), ((ComplexContent) single).get(child.getName()));
+											}
+											maps.add(map);
+										}
 										else {
+											logger.debug("Could not convert single to map: " + (single == null ? "null" : single.getClass()));
 											allMaps = false;
 										}
 									}
@@ -311,7 +328,7 @@ public class Template {
 													if (tmp.toString().matches(".*\\$\\{\"[^\"]+\"\\}.*"))
 														tmp.setCellValue(tmp.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
 													else if (tmp.toString().matches("^.*\\$\\{" + variableParts[0] + "/[^}]+\\}.*$"))
-														tmp.setCellValue(tmp.toString().replaceAll("^(.*\\$\\{)(" + variableParts[0] + "/[^}]+\\}.*)$", "$1" + "0" + ".$2"));
+														tmp.setCellValue(tmp.toString().replaceAll("^(.*\\$\\{)(" + variableParts[0] + "/[^}]+\\}.*)$", "$1" + "0" + "/$2"));
 												}
 											}
 											// explode the maps
@@ -327,7 +344,7 @@ public class Template {
 									continue loop;
 								}
 								else
-									logger.warn("The complex variable '" + variableParts[0] + "' is not a map");
+									logger.warn("The complex variable '" + variableParts[0] + "' is not a map, it is: " + (targetVariable == null ? "null" : targetVariable.getClass()));
 							}
 							else if (removeNonExistent) {
 								if (cell.toString().equals(matcher.group())) {
@@ -684,12 +701,16 @@ public class Template {
 	}
 	
 	private static void duplicateRowBlock(Sheet sheet, int recordCount, String style, int rowIndex, int blocksize, String complexName, boolean duplicateAll) {
-		System.out.println("Duplicating row block: " + rowIndex + " > " + blocksize);
+		logger.debug("Duplicating row block: " + rowIndex + " > " + blocksize);
 		// only duplicate if there is more than 1 record
 		if (recordCount > 1) {
 			// shift rows after the block, if any
-			if (rowIndex + (blocksize - 1) < sheet.getLastRowNum())
-				sheet.shiftRows(rowIndex + blocksize, sheet.getLastRowNum(), (recordCount * blocksize) - 1);
+			if (rowIndex + (blocksize - 1) < sheet.getLastRowNum()) {
+				int amountToShift = (recordCount * blocksize) - 1;
+				int shiftUntil = sheet.getLastRowNum() - amountToShift - 1;
+//				logger.info("Shifting from " + (rowIndex + blocksize) + " until " + shiftUntil + " > " + amountToShift);
+				sheet.shiftRows(rowIndex + blocksize, shiftUntil, amountToShift);
+			}
 			// not the first record, it uses the rows already available in the template
 			for (int i = 1; i < recordCount; i++) {
 				for (int j = 0; j < blocksize; j++) {
@@ -735,27 +756,44 @@ public class Template {
 		int blocksize = 0;
 		// any lines that are empty at the end are counted with the block size but should only really count if followed by a variable line
 		int trailingEmptyLines = 0;
-		for (int i = rowIndex; i <= sheet.getLastRowNum(); i++) {
+		for (int i = rowIndex; i < sheet.getLastRowNum(); i++) {
 			boolean hasComplex = false;
 			boolean hasOtherVariables = false;
-			for (Cell cell : sheet.getRow(i)) {
-				if (cell.toString().matches("\\$\\{" + complexName + "/[^}]+\\}")) {
-					hasComplex = true;
-					break;
+			Row row = sheet.getRow(i);
+			if (row != null) {
+				Iterator<Cell> iterator = row.iterator();
+				if (iterator != null) {
+					for (Cell cell : row) {
+						if (cell.toString().matches("\\$\\{" + complexName + "/[^}]+\\}")) {
+							hasComplex = true;
+							break;
+						}
+						else if (cell.toString().matches("\\$\\{[^}]+\\}"))
+							hasOtherVariables = true;
+					}
+					if (hasComplex) {
+						trailingEmptyLines = 0;
+						blocksize++;
+					}
+					else if (!hasOtherVariables) {
+						trailingEmptyLines++;
+						blocksize++;
+					}
+					else
+						break;
 				}
-				else if (cell.toString().matches("\\$\\{[^}]+\\}"))
-					hasOtherVariables = true;
+				else {
+					blocksize++;
+					trailingEmptyLines++;
+				}
 			}
-			if (hasComplex) {
-				trailingEmptyLines = 0;
+			else {
 				blocksize++;
-			}
-			else if (!hasOtherVariables) {
 				trailingEmptyLines++;
-				blocksize++;
 			}
-			else
+			if (trailingEmptyLines >= maxTrailingEmptyLines) {
 				break;
+			}
 		}
 		return blocksize - trailingEmptyLines;
 	}
