@@ -67,6 +67,9 @@ public class ExcelUtils {
 		try {
 			Sheet sheet = workbook.createSheet(sheetName);
 			int i = 0;
+			CellStyle dateStyle = workbook.createCellStyle();
+			DataFormat dateFormatter = workbook.createDataFormat();
+			dateStyle.setDataFormat(dateFormatter.getFormat(dateFormat));
 			for (Object rowObject : matrix) {
 				Row row = sheet.createRow(i++);
 				if (rowObject != null) {
@@ -87,10 +90,7 @@ public class ExcelUtils {
 						else if (cellValue instanceof Date) {
 							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
 							cell.setCellValue((Date) cellValue);
-							CellStyle style = workbook.createCellStyle();
-							DataFormat formatter = workbook.createDataFormat();
-							style.setDataFormat(formatter.getFormat(dateFormat));
-							cell.setCellStyle(style);
+							cell.setCellStyle(dateStyle);
 						}
 						else if (cellValue instanceof Calendar) {
 							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
