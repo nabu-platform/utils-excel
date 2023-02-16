@@ -21,6 +21,7 @@ import org.apache.poi.ss.usermodel.RichTextString;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.util.LocaleUtil;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.xml.sax.SAXException;
 
@@ -56,14 +57,22 @@ public class ExcelUtils {
 		}
 	}
 	
+	public static void write(OutputStream output, Iterable<Object> matrix, String sheetName, FileType fileType, String dateFormat) throws IOException {
+		write(output, matrix, sheetName, fileType, dateFormat, null);
+	}
 	/**
 	 * Writes a matrix to a sheet in an excel file
 	 */
 	@SuppressWarnings("unchecked")
-	public static void write(OutputStream output, Iterable<Object> matrix, String sheetName, FileType fileType, String dateFormat) throws IOException {
+	public static void write(OutputStream output, Iterable<Object> matrix, String sheetName, FileType fileType, String dateFormat, TimeZone timezone) throws IOException {
 		if (dateFormat == null)
 			dateFormat = "yyyy-MM-ddTHH:mm:ss";
 		Workbook workbook = fileType == FileType.XLS ? new HSSFWorkbook() : new XSSFWorkbook();
+		// set a custom timezone
+		// this is thread-based
+		if (timezone != null) {
+			LocaleUtil.setUserTimeZone(timezone);
+		}
 		try {
 			Sheet sheet = workbook.createSheet(sheetName);
 			int i = 0;
@@ -116,6 +125,10 @@ public class ExcelUtils {
 			workbook.write(output);
 		}
 		finally {
+			if (timezone != null) {
+//				LocaleUtil.resetUserTimeZone();
+				LocaleUtil.setUserTimeZone(null);
+			}
 			workbook.close();
 		}
 	}
