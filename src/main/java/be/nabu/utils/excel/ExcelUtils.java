@@ -68,6 +68,8 @@ public class ExcelUtils {
 		if (dateFormat == null)
 			dateFormat = "yyyy-MM-ddTHH:mm:ss";
 		Workbook workbook = fileType == FileType.XLS ? new HSSFWorkbook() : new XSSFWorkbook();
+		
+		
 		// set a custom timezone
 		// this is thread-based
 		if (timezone != null) {
@@ -79,6 +81,14 @@ public class ExcelUtils {
 			CellStyle dateStyle = workbook.createCellStyle();
 			DataFormat dateFormatter = workbook.createDataFormat();
 			dateStyle.setDataFormat(dateFormatter.getFormat(dateFormat));
+			
+			// this allows us to set the the category (or format) of the cell to string intead of general
+			// in a general field, excel might autoformat a number with leading zeros or a lot of digits etc, by forcing a string format this is no longer an issue
+			DataFormat dataFormat = workbook.createDataFormat();
+			CellStyle stringStyle = workbook.createCellStyle();
+			// @ should be string, # is numeric?
+			stringStyle.setDataFormat(dataFormat.getFormat("@"));
+			
 			for (Object rowObject : matrix) {
 				Row row = sheet.createRow(i++);
 				if (rowObject != null) {
@@ -118,6 +128,7 @@ public class ExcelUtils {
 						else {
 							cell.setCellType(Cell.CELL_TYPE_STRING);
 							cell.setCellValue(cellValue.toString());
+							cell.setCellStyle(stringStyle);
 						}
 					}
 				}
