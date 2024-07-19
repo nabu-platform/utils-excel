@@ -19,8 +19,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -206,13 +208,13 @@ public class Template {
 												if (tmp != null) {
 													Cell newCell = row.createCell(j + list.size() - 1);
 													switch (tmp.getCellType()) {
-														case Cell.CELL_TYPE_BOOLEAN:
+														case BOOLEAN:
 															newCell.setCellValue(tmp.getBooleanCellValue());
 														break;
-														case Cell.CELL_TYPE_NUMERIC:
+														case NUMERIC:
 															newCell.setCellValue(tmp.getNumericCellValue());
 														break;
-														case Cell.CELL_TYPE_FORMULA:
+														case FORMULA:
 															newCell.setCellFormula(tmp.getCellFormula());
 														break;
 														default:
@@ -349,7 +351,7 @@ public class Template {
 							else if (removeNonExistent) {
 								if (cell.toString().equals(matcher.group())) {
 									logger.debug("The non-existent variable is replaced with a blank cell");
-									cell.setCellType(Cell.CELL_TYPE_BLANK);
+									cell.setCellType(CellType.BLANK);
 								}
 								else {
 									logger.debug("The non-existent variable is a partial string, replace with an empty string");
@@ -456,7 +458,7 @@ public class Template {
 		else if (value instanceof Calendar)
 			cell.setCellValue((Calendar) value);
 		else if (value == null)
-			cell.setCellType(Cell.CELL_TYPE_BLANK);
+			cell.setCellType(CellType.BLANK);
 		else
 			cell.setCellValue(value.toString());
 		applyStyle(cell, style);
@@ -521,7 +523,7 @@ public class Template {
 						newCell.setCellValue(cell.toString().replaceAll("\\$\\{\"([^\"]+)\"\\}", "$1"));
 					// otherwise leave empty
 					else
-						newCell.setCellType(Cell.CELL_TYPE_BLANK);
+						newCell.setCellType(CellType.BLANK);
 				}
 			}
 		
@@ -591,13 +593,13 @@ public class Template {
 				if (cell != null) {
 					Cell newCell = row.createCell(i + recordCount - 1);
 					switch (cell.getCellType()) {
-						case Cell.CELL_TYPE_BOOLEAN:
+						case BOOLEAN:
 							newCell.setCellValue(cell.getBooleanCellValue());
 						break;
-						case Cell.CELL_TYPE_NUMERIC:
+						case NUMERIC:
 							newCell.setCellValue(cell.getNumericCellValue());
 						break;
-						case Cell.CELL_TYPE_FORMULA:
+						case FORMULA:
 							newCell.setCellFormula(cell.getCellFormula());
 						break;
 						default:
@@ -623,13 +625,13 @@ public class Template {
 					newCell.setCellType(cell.getCellType());
 					// set the value
 					switch (cell.getCellType()) {
-						case Cell.CELL_TYPE_BOOLEAN:
+						case BOOLEAN:
 							newCell.setCellValue(cell.getBooleanCellValue());
 						break;
-						case Cell.CELL_TYPE_NUMERIC:
+						case NUMERIC:
 							newCell.setCellValue(cell.getNumericCellValue());
 						break;
-						case Cell.CELL_TYPE_FORMULA:
+						case FORMULA:
 							newCell.setCellFormula(cell.getCellFormula());
 						break;
 						default:
@@ -687,11 +689,11 @@ public class Template {
 					}
 					else {
 						switch (cell.getCellType()) {
-							case Cell.CELL_TYPE_BOOLEAN: newCell.setCellValue(cell.getBooleanCellValue()); break;
-							case Cell.CELL_TYPE_ERROR: newCell.setCellValue(cell.getErrorCellValue()); break;
-							case Cell.CELL_TYPE_FORMULA: newCell.setCellFormula(cell.getCellFormula()); break;
-							case Cell.CELL_TYPE_NUMERIC: newCell.setCellValue(cell.getNumericCellValue()); break;
-							case Cell.CELL_TYPE_BLANK: newCell.setCellType(Cell.CELL_TYPE_BLANK); break;
+							case BOOLEAN: newCell.setCellValue(cell.getBooleanCellValue()); break;
+							case ERROR: newCell.setCellValue(cell.getErrorCellValue()); break;
+							case FORMULA: newCell.setCellFormula(cell.getCellFormula()); break;
+							case NUMERIC: newCell.setCellValue(cell.getNumericCellValue()); break;
+							case BLANK: newCell.setCellType(CellType.BLANK); break;
 							default: newCell.setCellValue(cell.toString());
 						}
 					}
@@ -738,11 +740,11 @@ public class Template {
 						}
 						else {
 							switch (cell.getCellType()) {
-								case Cell.CELL_TYPE_BOOLEAN: newCell.setCellValue(cell.getBooleanCellValue()); break;
-								case Cell.CELL_TYPE_ERROR: newCell.setCellValue(cell.getErrorCellValue()); break;
-								case Cell.CELL_TYPE_FORMULA: newCell.setCellFormula(cell.getCellFormula()); break;
-								case Cell.CELL_TYPE_NUMERIC: newCell.setCellValue(cell.getNumericCellValue()); break;
-								case Cell.CELL_TYPE_BLANK: newCell.setCellType(Cell.CELL_TYPE_BLANK); break;
+								case BOOLEAN: newCell.setCellValue(cell.getBooleanCellValue()); break;
+								case ERROR: newCell.setCellValue(cell.getErrorCellValue()); break;
+								case FORMULA: newCell.setCellFormula(cell.getCellFormula()); break;
+								case NUMERIC: newCell.setCellValue(cell.getNumericCellValue()); break;
+								case BLANK: newCell.setCellType(CellType.BLANK); break;
 								default: newCell.setCellValue(cell.toString());
 							}
 						}
@@ -804,13 +806,13 @@ public class Template {
 			Map<String, String> map = parseStyle(style);
 			if (map.containsKey("border")) {
 				if (map.get("border").substring(0, 1).equals("0"))
-					cell.getCellStyle().setBorderTop(CellStyle.BORDER_NONE);
+					cell.getCellStyle().setBorderTop(BorderStyle.NONE);
 				if (map.get("border").substring(1, 2).equals("0"))
-					cell.getCellStyle().setBorderRight(CellStyle.BORDER_NONE);							
+					cell.getCellStyle().setBorderRight(BorderStyle.NONE);							
 				if (map.get("border").substring(2, 3).equals("0"))
-					cell.getCellStyle().setBorderBottom(CellStyle.BORDER_NONE);
+					cell.getCellStyle().setBorderBottom(BorderStyle.NONE);
 				if (map.get("border").substring(3, 4).equals("0"))
-					cell.getCellStyle().setBorderLeft(CellStyle.BORDER_NONE);
+					cell.getCellStyle().setBorderLeft(BorderStyle.NONE);
 			}
 			if (map.containsKey("fit")) {
 				if (map.get("fit").equals("auto"))

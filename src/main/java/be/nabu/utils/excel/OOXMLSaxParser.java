@@ -19,6 +19,7 @@ import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.openxml4j.opc.PackageAccess;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.xssf.eventusermodel.XSSFReader;
+import org.apache.poi.xssf.model.SharedStrings;
 import org.apache.poi.xssf.model.SharedStringsTable;
 import org.apache.poi.xssf.model.StylesTable;
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTXf;
@@ -62,7 +63,7 @@ public class OOXMLSaxParser {
 		throw new SAXException("No sheet found by that name");
 	}
 	
-	private Object[][] parse(InputStream input, StylesTable styles, SharedStringsTable shared, boolean ignoreErrors, Integer offsetX, Integer offsetY, Integer maxX, Integer maxY) throws SAXException, ParserConfigurationException, IOException, ParseException {
+	private Object[][] parse(InputStream input, StylesTable styles, SharedStrings shared, boolean ignoreErrors, Integer offsetX, Integer offsetY, Integer maxX, Integer maxY) throws SAXException, ParserConfigurationException, IOException, ParseException {
 	    XMLReader reader = SAXParserFactory.newInstance().newSAXParser().getXMLReader();
 	    SheetHandler handler = new SheetHandler(styles, shared, ignoreErrors, offsetX, offsetY, maxX, maxY);
 	    reader.setContentHandler(handler);
@@ -144,7 +145,7 @@ public class OOXMLSaxParser {
 				// otherwise, it's either a formatted number or a formatted date
 				else {
 					CTXf style = styles.getCellXfAt(new Integer(cellStyle));
-					if (DateUtil.isInternalDateFormat((int)style.getNumFmtId()) || DateUtil.isADateFormat((int)style.getNumFmtId(), styles.getNumberFormatAt((int) style.getNumFmtId())))
+					if (DateUtil.isInternalDateFormat((int)style.getNumFmtId()) || DateUtil.isADateFormat((int)style.getNumFmtId(), styles.getNumberFormatAt((short) style.getNumFmtId())))
 						return DataType.DATE;
 					else
 						return DataType.NUMBER;
@@ -174,7 +175,7 @@ public class OOXMLSaxParser {
 		
 		private Integer maxX = null, maxY = null, offsetX = null, offsetY = null;
 		
-		public SheetHandler(StylesTable styles, SharedStringsTable shared, boolean ignoreErrors, Integer offsetX, Integer offsetY, Integer maxX, Integer maxY) {
+		public SheetHandler(StylesTable styles, SharedStrings shared, boolean ignoreErrors, Integer offsetX, Integer offsetY, Integer maxX, Integer maxY) {
 			this.shared = shared;
 			this.styles = styles;
 			this.maxX = maxX;
@@ -188,7 +189,7 @@ public class OOXMLSaxParser {
 		 * This is a table of shared strings that is kept separate from the sheets. The goal here is to save space and processing time for strings that are repeated often.
 		 * The cell in question will only hold a reference to this shared table
 		 */
-		private SharedStringsTable shared = null;
+		private SharedStrings shared = null;
 		private StylesTable styles = null;
 		
 		/**
@@ -270,7 +271,7 @@ public class OOXMLSaxParser {
 					break;
 					// this should take the last calculated value
 					case FORMULA: object = buffer.toString(); break;
-					case SHARED_STRING: object = shared.getEntryAt(new Integer(buffer.toString())).getT(); break;
+					case SHARED_STRING: object = shared.getItemAt(new Integer(buffer.toString())).getString(); break;
 					case INLINE_STRING: object = buffer.toString(); break;
 					default: throw new SAXException("Could not process type " + cell.getType());
 				}

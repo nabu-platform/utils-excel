@@ -16,6 +16,7 @@ import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormat;
 import org.apache.poi.ss.usermodel.RichTextString;
 import org.apache.poi.ss.usermodel.Row;
@@ -97,36 +98,36 @@ public class ExcelUtils {
 					for (Object cellValue : rowIterable) {
 						Cell cell = row.createCell(j++);
 						if (cellValue == null)
-							cell.setCellType(Cell.CELL_TYPE_BLANK);
+							cell.setCellType(CellType.BLANK);
 						else if (cellValue instanceof Number) {
-							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
+							cell.setCellType(CellType.NUMERIC);
 							cell.setCellValue(((Number) cellValue).doubleValue());
 						}
 						else if (cellValue instanceof Boolean) {
-							cell.setCellType(Cell.CELL_TYPE_BOOLEAN);
+							cell.setCellType(CellType.BOOLEAN);
 							cell.setCellValue(((Boolean) cellValue).booleanValue());
 						}
 						else if (cellValue instanceof Date) {
-							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
+							cell.setCellType(CellType.NUMERIC);
 							cell.setCellValue((Date) cellValue);
 							cell.setCellStyle(dateStyle);
 						}
 						else if (cellValue instanceof Calendar) {
-							cell.setCellType(Cell.CELL_TYPE_NUMERIC);
+							cell.setCellType(CellType.NUMERIC);
 							cell.setCellValue((Calendar) cellValue);						
 						}
 						else if (cellValue instanceof RichTextString) {
-							cell.setCellType(Cell.CELL_TYPE_STRING);
+							cell.setCellType(CellType.STRING);
 							cell.setCellValue((RichTextString) cellValue);						
 						}
 						// formula
 						else if (cellValue instanceof String && ((String) cellValue).startsWith("=")) {
-							cell.setCellType(Cell.CELL_TYPE_FORMULA);
+							cell.setCellType(CellType.FORMULA);
 							// can not start with a "="
 							cell.setCellFormula(((String) cellValue).substring(1));
 						}
 						else {
-							cell.setCellType(Cell.CELL_TYPE_STRING);
+							cell.setCellType(CellType.STRING);
 							cell.setCellValue(cellValue.toString());
 							cell.setCellStyle(stringStyle);
 						}

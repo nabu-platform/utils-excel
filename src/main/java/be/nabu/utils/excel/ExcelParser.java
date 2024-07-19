@@ -12,6 +12,7 @@ import java.util.List;
 import org.apache.poi.hssf.record.crypto.Biff8EncryptionKey;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.CellValue;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.FormulaEvaluator;
@@ -97,7 +98,7 @@ public class ExcelParser implements Closeable {
 	public void replaceAll(Sheet sheet, String regex, String replacement) {
 		for (Row row : sheet) {
 			for (Cell cell : row) {
-				if (cell.getCellType() == Cell.CELL_TYPE_STRING) {
+				if (cell.getCellType() == CellType.STRING) {
 					String content = cell.getStringCellValue();
 					content = content.replaceAll(regex, replacement);
 					cell.setCellValue(content);
@@ -117,6 +118,10 @@ public class ExcelParser implements Closeable {
 	}
 	
 	public List<List<Object>> matrix(Sheet sheet) throws ParseException {
+		return matrix(sheet, new ValueParserImpl());
+	}
+	
+	public List<List<Object>> matrix(Sheet sheet, ValueParser parser) throws ParseException {
 		List<List<Object>> matrix = new ArrayList<List<Object>>();
 
 		// formula evaluator
@@ -172,64 +177,67 @@ public class ExcelParser implements Closeable {
 					// skip this cell if it's not within the window
 					if ((offsetX != null && cell.getColumnIndex() < offsetX) || (maxX != null && cell.getColumnIndex() > maxX))
 						continue;
-					// this evaluates any formula's in the cell and returns the type of the current cell value (http://poi.apache.org/spreadsheet/eval.html for example)
-					// The patch in bug https://issues.apache.org/bugzilla/show_bug.cgi?id=49783 should be applied to the 3.6 release if necessary (IllegalArgumentException for unknown error type 23)
-					// also note that there might be a small bug in the "evaluate()" method which does not allow CELL_TYPE_BLANK (will throw an error java.lang.IllegalStateException: Bad cell type (3)), this is a temporary workaround
-					// file bug report + patch: https://issues.apache.org/bugzilla/show_bug.cgi?id=49873
-					if (cell.getCellType() == Cell.CELL_TYPE_BLANK)
-						rowList.add(null);
-					else {
-						// the "evaluateInCell" does NOT work on "referenced" formula's, which are created by entering a formula and dragging that cell, at which point the copies refer to the first formula
-						// when the evaluateInCell is called once, the formula disappears, so all referenced cells can not compute anymore
-						// note sure if this is a feature or a bug
-						// filed bug report: https://issues.apache.org/bugzilla/show_bug.cgi?id=49872
-						try {
-							// this can throw a runtimeexception
-							CellValue cellValue = evaluator.evaluate(cell);
-							switch(cellValue.getCellType()) {
-								case Cell.CELL_TYPE_BLANK: rowList.add(null); break;
-								case Cell.CELL_TYPE_BOOLEAN: rowList.add((Boolean) cellValue.getBooleanValue()); break;
-								case Cell.CELL_TYPE_ERROR: 
-									if (!ignoreErrors)
-										throw new ParseException("Exception detected at (" + row.getRowNum() + ", " + i + "): " + FormulaError.forInt(cellValue.getErrorValue()).getString(), row.getRowNum());
-									rowList.add(FormulaError.forInt(cellValue.getErrorValue()).getString()); break;
-								case Cell.CELL_TYPE_FORMULA:
-									assert false : "According to the site (http://poi.apache.org/spreadsheet/eval.html) this shouldn't happen due to the evaluate";
-								break;
-								case Cell.CELL_TYPE_NUMERIC:
-									if (DateUtil.isCellInternalDateFormatted(cell) || DateUtil.isCellDateFormatted(cell))
-										// TODO: cell.getDateCellValue() (if DateUtil is fixed) 
-										rowList.add(DateUtil.getJavaDate(cellValue.getNumberValue()));
-									else
-										rowList.add(useBigDecimals ? new BigDecimal(cellValue.getNumberValue()) : cellValue.getNumberValue());
-								break;
-								// add as string
-								default: rowList.add(cellValue.getStringValue());
-							}
-						}
-						// this is thrown when for example referencing an external excel file in a formula
-						catch (RuntimeException e) {
-							// try to get the current (cached) value if you have ignoreerrors set to true
-							if (ignoreErrors) {
-								switch (cell.getCachedFormulaResultType()) {
-									case Cell.CELL_TYPE_BLANK: throw new RuntimeException("The formula could not be executed but there is no cached value", e);
-									case Cell.CELL_TYPE_ERROR: throw new RuntimeException("The formula could not be executed but the cached value is also in error", e);
-									case Cell.CELL_TYPE_BOOLEAN: rowList.add((Boolean) cell.getBooleanCellValue()); break;
-									case Cell.CELL_TYPE_NUMERIC: 
-										if (DateUtil.isCellInternalDateFormatted(cell) || DateUtil.isCellDateFormatted(cell))
-											// TODO: cell.getDateCellValue() (if DateUtil is fixed) 
-											rowList.add(DateUtil.getJavaDate(cell.getNumericCellValue()));
-										else
-											rowList.add(new BigDecimal(cell.getNumericCellValue()));
-									break;
-									default: rowList.add(cell.getStringCellValue());
-								}
-							}
-							else
-								throw e;
-						}
-
-					}
+					rowList.add(parser.parse(row.getRowNum(), cell.getColumnIndex(), cell, evaluator));
+					
+//					
+//					// this evaluates any formula's in the cell and returns the type of the current cell value (http://poi.apache.org/spreadsheet/eval.html for example)
+//					// The patch in bug https://issues.apache.org/bugzilla/show_bug.cgi?id=49783 should be applied to the 3.6 release if necessary (IllegalArgumentException for unknown error type 23)
+//					// also note that there might be a small bug in the "evaluate()" method which does not allow CELL_TYPE_BLANK (will throw an error java.lang.IllegalStateException: Bad cell type (3)), this is a temporary workaround
+//					// file bug report + patch: https://issues.apache.org/bugzilla/show_bug.cgi?id=49873
+//					if (cell.getCellType() == CellType.BLANK)
+//						rowList.add(null);
+//					else {
+//						// the "evaluateInCell" does NOT work on "referenced" formula's, which are created by entering a formula and dragging that cell, at which point the copies refer to the first formula
+//						// when the evaluateInCell is called once, the formula disappears, so all referenced cells can not compute anymore
+//						// note sure if this is a feature or a bug
+//						// filed bug report: https://issues.apache.org/bugzilla/show_bug.cgi?id=49872
+//						try {
+//							// this can throw a runtimeexception
+//							CellValue cellValue = evaluator.evaluate(cell);
+//							switch(cellValue.getCellType()) {
+//								case BLANK: rowList.add(null); break;
+//								case BOOLEAN: rowList.add((Boolean) cellValue.getBooleanValue()); break;
+//								case ERROR: 
+//									if (!ignoreErrors)
+//										throw new ParseException("Exception detected at (" + row.getRowNum() + ", " + i + "): " + FormulaError.forInt(cellValue.getErrorValue()).getString(), row.getRowNum());
+//									rowList.add(FormulaError.forInt(cellValue.getErrorValue()).getString()); break;
+//								case FORMULA:
+//									assert false : "According to the site (http://poi.apache.org/spreadsheet/eval.html) this shouldn't happen due to the evaluate";
+//								break;
+//								case NUMERIC:
+//									if (DateUtil.isCellInternalDateFormatted(cell) || DateUtil.isCellDateFormatted(cell))
+//										// TODO: cell.getDateCellValue() (if DateUtil is fixed) 
+//										rowList.add(DateUtil.getJavaDate(cellValue.getNumberValue()));
+//									else
+//										rowList.add(useBigDecimals ? new BigDecimal(cellValue.getNumberValue()) : cellValue.getNumberValue());
+//								break;
+//								// add as string
+//								default: rowList.add(cellValue.getStringValue());
+//							}
+//						}
+//						// this is thrown when for example referencing an external excel file in a formula
+//						catch (RuntimeException e) {
+//							// try to get the current (cached) value if you have ignoreerrors set to true
+//							if (ignoreErrors) {
+//								switch (cell.getCachedFormulaResultType()) {
+//									case BLANK: throw new RuntimeException("The formula could not be executed but there is no cached value", e);
+//									case ERROR: throw new RuntimeException("The formula could not be executed but the cached value is also in error", e);
+//									case BOOLEAN: rowList.add((Boolean) cell.getBooleanCellValue()); break;
+//									case NUMERIC: 
+//										if (DateUtil.isCellInternalDateFormatted(cell) || DateUtil.isCellDateFormatted(cell))
+//											// TODO: cell.getDateCellValue() (if DateUtil is fixed) 
+//											rowList.add(DateUtil.getJavaDate(cell.getNumericCellValue()));
+//										else
+//											rowList.add(new BigDecimal(cell.getNumericCellValue()));
+//									break;
+//									default: rowList.add(cell.getStringCellValue());
+//								}
+//							}
+//							else
+//								throw e;
+//						}
+//
+//					}
 				}
 			}
 			// add the row
