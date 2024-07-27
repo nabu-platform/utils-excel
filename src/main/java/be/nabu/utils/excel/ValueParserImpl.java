@@ -12,7 +12,7 @@ import org.apache.poi.ss.usermodel.FormulaEvaluator;
 
 public class ValueParserImpl implements ValueParser {
 	
-	private boolean ignoreErrors, useBigDecimals;
+	private boolean ignoreErrors = true, useBigDecimals;
 
 	public CellType getCellType(int cellIndex, Cell cell, CellValue value) {
 		return value.getCellType();
@@ -90,4 +90,21 @@ public class ValueParserImpl implements ValueParser {
 			}
 		}
 	}
+
+	public boolean isIgnoreErrors() {
+		return ignoreErrors;
+	}
+
+	public void setIgnoreErrors(boolean ignoreErrors) {
+		this.ignoreErrors = ignoreErrors;
+	}
+
+	public boolean isUseBigDecimals() {
+		return useBigDecimals;
+	}
+
+	public void setUseBigDecimals(boolean useBigDecimals) {
+		this.useBigDecimals = useBigDecimals;
+	}
+	
 }
