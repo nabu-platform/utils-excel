@@ -64,13 +64,21 @@ public class ExcelUtils {
 	/**
 	 * Writes a matrix to a sheet in an excel file
 	 */
-	@SuppressWarnings("unchecked")
 	public static void write(OutputStream output, Iterable<Object> matrix, String sheetName, FileType fileType, String dateFormat, TimeZone timezone) throws IOException {
-		if (dateFormat == null)
-			dateFormat = "yyyy-MM-ddTHH:mm:ss";
 		Workbook workbook = fileType == FileType.XLS ? new HSSFWorkbook() : new XSSFWorkbook();
-		
-		
+		try {
+			write(workbook, matrix, sheetName, dateFormat, timezone);
+			workbook.write(output);
+		}
+		finally {
+			workbook.close();
+		}
+	}
+	
+	public static void write(Workbook workbook, Iterable<Object> matrix, String sheetName, String dateFormat, TimeZone timezone) {
+		if (dateFormat == null) {
+			dateFormat = "yyyy-MM-ddTHH:mm:ss";
+		}
 		// set a custom timezone
 		// this is thread-based
 		if (timezone != null) {
@@ -134,14 +142,12 @@ public class ExcelUtils {
 					}
 				}
 			}
-			workbook.write(output);
 		}
 		finally {
 			if (timezone != null) {
 //				LocaleUtil.resetUserTimeZone();
 				LocaleUtil.setUserTimeZone(null);
 			}
-			workbook.close();
 		}
 	}
 	
